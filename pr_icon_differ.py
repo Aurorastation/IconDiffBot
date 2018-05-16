@@ -90,6 +90,7 @@ class Config:
                                                    config.get('upload_api', {}).get('key'), "")
         self.ignore_list = Config.load_variable(self, 'ICONBOT_IGNORELIST', None,
                                                   config.get('ignore'), "", True)
+        log_message("Listening for pull actions: {}".format(self.check_actions))
 
 
 
