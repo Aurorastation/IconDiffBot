@@ -3,7 +3,11 @@
   "github" : {
     "secret" : "",
     "user" : "",
-    "auth" : ""
+    "auth" : "",
+    "check_actions": [
+        "opened",
+        "synchronize"
+    ]
   },
   "upload_api" : {
     "url" : "",

@@ -23,7 +23,7 @@ log_format = "[%(asctime)s]: %(message)s"
 datefmt = "%Y-%m-%d %H:%M:%S"
 logging_level = logging.INFO
 if DEBUG:
-    logging_level = logging.NOTSET
+    logging_level = logging.DEBUG
 logging.basicConfig(
     filename='events.log',
     level=logging_level,
@@ -54,12 +54,17 @@ sys.excepthook = handle_exception
 
 # Setup the config
 class Config:
-    def load_variable(self, environ_name, alt_environ_name, config_value):
+    def load_variable(self, environ_name=None, alt_environ_name=None, config_value=None, default=None, split_to_list=False):
+        return_data = default
+        if config_value is not None:
+            return_data = config_value
+        if environ_name is not None and os.environ.get(environ_name) is not None:
+            return_data = os.environ.get(environ_name)
         if alt_environ_name is not None and os.environ.get(alt_environ_name) is not None:
-            return os.environ.get(alt_environ_name)
-        if os.environ.get(environ_name) is not None:
-            return os.environ.get(environ_name)
-        return config_value
+            return_data = os.environ.get(alt_environ_name)
+        if split_to_list and isinstance(return_data, str):
+            return_data = return_data.split(',')
+        return return_data
 
     def __init__(self):
         config = {}
@@ -70,24 +75,26 @@ class Config:
             log_message("Make sure the config file exists.")
 
         # Overwrite that with the environment variables
-        if os.environ.get('ICONBOT_IGNORELIST') is not None:
-            config['ignore'] = os.environ.get('ICONBOT_IGNORELIST').split(',')
-        self.webhook_port = Config.load_variable(self, 'ICONBOT_WEBHOOK_PORT', None, config.get('webhook_port'))
+        self.webhook_port = Config.load_variable(self, 'ICONBOT_WEBHOOK_PORT', None, config.get('webhook_port'), 1236)
         self.github_secret = Config.load_variable(self, 'GITHUB_SECRET', 'ICONBOT_GITHUB_SECRET',
-                                                  config.get('github', {}).get('secret')).encode('utf-8')
+                                                  config.get('github', {}).get('secret'), "").encode('utf-8')
         self.github_user = Config.load_variable(self, 'GITHUB_USER', 'ICONBOT_GITHUB_USER',
-                                                config.get('github', {}).get('user'))
+                                                config.get('github', {}).get('user'), "")
         self.github_auth = Config.load_variable(self, 'GITHUB_AUTH', 'ICONBOT_GITHUB_AUTH',
-                                                config.get('github', {}).get('auth'))
+                                                config.get('github', {}).get('auth'), "")
+        self.check_actions = Config.load_variable(self, 'ICONBOT_GITHUB_CHECK_ACTIONS', None,
+                                                  config.get('github', {}).get('check_actions', None), "", True)
         self.upload_api_url = Config.load_variable(self, 'UPLOADAPI_URL', 'UPLOADAPI_URL',
-                                                   config.get('upload_api', {}).get('url'))
+                                                   config.get('upload_api', {}).get('url'), "")
         self.upload_api_key = Config.load_variable(self, 'UPLOADAPI_KEY', 'UPLOADAPI_KEY',
-                                                   config.get('upload_api', {}).get('key'))
-        self.ignore_list = config.get('ignore', {})
+                                                   config.get('upload_api', {}).get('key'), "")
+        self.ignore_list = Config.load_variable(self, 'ICONBOT_IGNORELIST', None,
+                                                  config.get('ignore'), "", True)
+
 
 
 config = Config()
-actions_to_check = ['opened', 'synchronize']
+actions_to_check = config.check_actions
 binary_regex = re.compile(r'diff --git a\/(.*\.dmi) b\/.?')
 
 
