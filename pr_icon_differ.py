@@ -14,10 +14,10 @@ import database
 
 DEBUG = False
 
-#DB Core
+# DB Core
 DB = database.DBCore()
 
-#Setup logging
+# Setup logging
 log_format = "[%(asctime)s]: %(message)s"
 datefmt = "%Y-%m-%d %H:%M:%S"
 logging_level = logging.INFO
@@ -37,18 +37,29 @@ logging.getLogger('').addHandler(console)
 
 logger = logging.getLogger(__name__)
 
+
 def log_message(message):
     """Logs a message to a file and prints on screen"""
     logger.info(message)
+
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     """Makes exception log to the logger"""
     logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
 
+
 sys.excepthook = handle_exception
 
-#Setup the config
+
+# Setup the config
 class Config:
+    def load_variable(self, environ_name, alt_environ_name, config_value):
+        if alt_environ_name is not None and os.environ.get(alt_environ_name) is not None:
+            return os.environ.get(alt_environ_name)
+        if os.environ.get(environ_name) is not None:
+            return os.environ.get(environ_name)
+        return config_value
+
     def __init__(self):
         config = {}
         if os.path.exists(os.path.abspath('config.json')):
@@ -56,17 +67,28 @@ class Config:
                 config = json.load(f)
         else:
             log_message("Make sure the config file exists.")
-        self.webhook_port = config['webhook_port']
-        self.github_secret = config['github']['secret'].encode('utf-8')
-        self.github_user = config['github']['user']
-        self.github_auth = config['github']['auth']
-        self.upload_api_url = config['upload_api']['url']
-        self.upload_api_key = config['upload_api']['key']
-        self.ignore_list = config['ignore'] 
+
+        # Overwrite that with the environment variables
+        if os.environ.get('ICONBOT_IGNORELIST') is not None:
+            config['ignore'] = os.environ.get('ICONBOT_IGNORELIST').split(',')
+        self.webhook_port = Config.load_variable(self, 'ICONBOT_WEBHOOK_PORT', None, config.get('webhook_port'))
+        self.github_secret = Config.load_variable(self, 'GITHUB_SECRET', 'ICONBOT_GITHUB_SECRET',
+                                                  config.get('github', {}).get('secret')).encode('utf-8')
+        self.github_user = Config.load_variable(self, 'GITHUB_USER', 'ICONBOT_GITHUB_USER',
+                                                config.get('github', {}).get('user'))
+        self.github_auth = Config.load_variable(self, 'GITHUB_AUTH', 'ICONBOT_GITHUB_AUTH',
+                                                config.get('github', {}).get('auth'))
+        self.upload_api_url = Config.load_variable(self, 'UPLOADAPI_URL', 'UPLOADAPI_URL',
+                                                   config.get('upload_api', {}).get('url'))
+        self.upload_api_key = Config.load_variable(self, 'UPLOADAPI_KEY', 'UPLOADAPI_KEY',
+                                                   config.get('upload_api', {}).get('key'))
+        self.ignore_list = config['ignore']
+
 
 config = Config()
 actions_to_check = ['opened', 'synchronize']
 binary_regex = re.compile(r'diff --git a\/(.*\.dmi) b\/.?')
+
 
 def compare_secret(secret_to_compare, payload):
     """Compares given secret with ours"""
@@ -76,6 +98,7 @@ def compare_secret(secret_to_compare, payload):
     this_secret = hmac.new(config.github_secret, payload, sha1)
     secret_to_compare = secret_to_compare.replace('sha1=', '')
     return hmac.compare_digest(secret_to_compare, this_secret.hexdigest())
+
 
 def check_diff(diff_url):
     """Checks the diff url for icons"""
@@ -91,6 +114,7 @@ def check_diff(diff_url):
         icons_with_diff.append(match.group(1))
     return icons_with_diff
 
+
 def upload_image(file_to_upload, img_hash, upload=True):
     """Uploads an image to the configured host"""
     if not upload:
@@ -98,12 +122,13 @@ def upload_image(file_to_upload, img_hash, upload=True):
     has_link = DB.get_url(img_hash)
     if has_link is not None:
         return has_link
-    data = {'key' : config.upload_api_key}
-    files = {'file' : file_to_upload}
+    data = {'key': config.upload_api_key}
+    files = {'file': file_to_upload}
     req = requests.post(config.upload_api_url, data=data, files=files)
     url = req.json()['url']
     DB.set_url(img_hash, url)
     return url
+
 
 def check_comments(api_url):
     """Checks all comments on given issue if we already commented on it(using config's github username), will return the issue ID if exists"""
@@ -114,6 +139,7 @@ def check_comments(api_url):
                 return comment['url']
     return None
 
+
 def post_comment(issue_url, message_dict, base):
     """Post a comment on given github issue url"""
     github_api_url = "{issue}/comments".format(issue=issue_url)
@@ -122,7 +148,7 @@ def post_comment(issue_url, message_dict, base):
     if comment_id is not None:
         github_api_url = comment_id
         http_method = requests.patch
-    body = json.dumps({'body' : '\n'.join(message_dict)})
+    body = json.dumps({'body': '\n'.join(message_dict)})
     repo_name = base['repo']['full_name']
     req = http_method(github_api_url, data=body, auth=(config.github_user, config.github_auth))
     if req.status_code == 201 or req.status_code == 200:
@@ -130,6 +156,7 @@ def post_comment(issue_url, message_dict, base):
     else:
         log_message("[{}] Failed to comment on: {}".format(repo_name, issue_url))
         log_message("Error code: {}".format(req.status_code))
+
 
 def check_icons(icons_with_diff, base, head, issue_url, send_message=True):
     """
@@ -141,7 +168,7 @@ def check_icons(icons_with_diff, base, head, issue_url, send_message=True):
     base_repo_url = base.get('repo').get('html_url')
     head_repo_url = head.get('repo').get('html_url')
     msgs = ["Icons with diff:"]
-    req_data = {'raw' : 1}
+    req_data = {'raw': 1}
     if DEBUG:
         issue_number = re.sub(r'.*\/issues\/(\d*)', '\\1', issue_url)
     for icon in icons_with_diff:
@@ -158,7 +185,7 @@ def check_icons(icons_with_diff, base, head, issue_url, send_message=True):
         if response_b.status_code == 200:
             with open(icon_path_b, 'wb') as f:
                 f.write(response_b.content)
-        #This means the file is being deleted, which does not interest us
+        # This means the file is being deleted, which does not interest us
         elif response_b.status_code == 404:
             try:
                 os.remove(icon_path_a)
@@ -197,7 +224,7 @@ def check_icons(icons_with_diff, base, head, issue_url, send_message=True):
                 url_b = "![]()"
             msg.append("{key}|{url_a}|{url_b}|{status}".format(key=key, url_a=url_a, url_b=url_b, status=status))
         msg.append("</details>")
-        if(len(msg) > 4):
+        if (len(msg) > 4):
             msgs.append("\n".join(msg))
         if DEBUG:
             with open("icon_dump/{}_{}.log".format(i_name, issue_number), 'w') as fp:
@@ -209,11 +236,12 @@ def check_icons(icons_with_diff, base, head, issue_url, send_message=True):
                 os.remove(icon_path_b)
     if send_message and len(msgs) > 1:
         post_comment(issue_url, msgs, base)
-    
+
 
 class Handler(resource.Resource):
     """Opens a web server to handle POST requests on given port"""
     isLeaf = True
+
     def render_POST(self, request):
         payload = request.content.getvalue()
         if not compare_secret(request.getHeader('X-Hub-Signature'), payload):
@@ -226,7 +254,7 @@ class Handler(resource.Resource):
             log_message("POST received with event: {}".format(event))
             return b"Event not supported"
 
-        #Then we check the PR for icon diffs
+        # Then we check the PR for icon diffs
         payload = json.loads("".join(map(chr, payload)))
         request.setResponseCode(200)
         pr_obj = payload['pull_request']
@@ -238,16 +266,19 @@ class Handler(resource.Resource):
         pr_diff_url = pr_obj['diff_url']
         head = pr_obj['head']
         base = pr_obj['base']
-        #if payload['action'] == 'synchronize':
+        # if payload['action'] == 'synchronize':
         #    pr_diff_url = "{html_url}/commits/{sha}.patch".format(html_url=pr_obj['html_url'], sha=head['sha'])
         icons_with_diff = check_diff(pr_diff_url)
         if icons_with_diff:
-            log_message("{}: Icon diff detected on pull request: {}!".format(base['repo']['full_name'], payload['number']))
+            log_message(
+                "{}: Icon diff detected on pull request: {}!".format(base['repo']['full_name'], payload['number']))
             check_icons(icons_with_diff, base, head, issue_url)
         return b"Ok"
+
     def render_GET(self, request):
         request.setResponseCode(404)
         return b"GET requests are not supported."
+
 
 def test_pr(number, owner, repository, send_message=False):
     """tests a pr for the icon diff"""
@@ -266,6 +297,7 @@ def test_pr(number, owner, repository, send_message=False):
         log_message(ic_name)
     check_icons(icons_diff, payload['base'], payload['head'], payload['issue_url'], send_message)
 
+
 def get_debug_input():
     owner = input("Owner: ")
     repo = input("Repo: ")
@@ -273,11 +305,23 @@ def get_debug_input():
     send_msg = True if input("Send message(y/n): ")[:1].lower() == 'y' else False
     test_pr(number, owner, repo, send_msg)
 
+
 def bulk_prs():
+    org = 'tgstation'
+    repo = 'tgstation'
+    prs = []
     with open('bulk_prs.txt') as f:
         prs = f.readlines()
+
+    # Check if the first line is a pr or a repo definition
+    if " " in prs[0]:
+        org = prs[0].split()[0]
+        repo = prs[0].split()[1]
+        prs.pop(0)
+
     for pr in prs:
-        test_pr(int(pr), 'tgstation', 'tgstation', True)
+        test_pr(int(pr), org, repo, True)
+
 
 def start_server():
     """Starts the webserver"""
@@ -289,9 +333,10 @@ def start_server():
     except KeyboardInterrupt:
         pass
 
+
 if __name__ == '__main__':
     if "debug" in sys.argv:
-        #DEBUG = True
+        # DEBUG = True
         get_debug_input()
     elif "bulk" in sys.argv:
         bulk_prs()
