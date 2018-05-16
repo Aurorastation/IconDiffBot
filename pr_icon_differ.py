@@ -83,7 +83,7 @@ class Config:
                                                    config.get('upload_api', {}).get('url'))
         self.upload_api_key = Config.load_variable(self, 'UPLOADAPI_KEY', 'UPLOADAPI_KEY',
                                                    config.get('upload_api', {}).get('key'))
-        self.ignore_list = config['ignore']
+        self.ignore_list = config.get('ignore', {})
 
 
 config = Config()
