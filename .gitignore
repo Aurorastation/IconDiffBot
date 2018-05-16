@@ -1,6 +1,7 @@
 *.json
+*.log
+*.db
+.idea
 icon_dump/*
 __pycache__/*
 venv/*
-*.log
-*.db
