@@ -4,6 +4,7 @@ import re
 import hmac
 import json
 import logging
+import argparse
 from hashlib import sha1
 import requests
 from twisted.web import resource, server
@@ -142,14 +143,15 @@ def check_comments(api_url):
 
 def post_comment(issue_url, message_dict, base):
     """Post a comment on given github issue url"""
+    repo_name = base['repo']['full_name']
     github_api_url = "{issue}/comments".format(issue=issue_url)
     comment_id = check_comments(github_api_url)
     http_method = requests.post
     if comment_id is not None:
         github_api_url = comment_id
         http_method = requests.patch
+        log_message("[{}] Found a comment from us on the pull request; {}".format(repo_name, github_api_url))
     body = json.dumps({'body': '\n'.join(message_dict)})
-    repo_name = base['repo']['full_name']
     req = http_method(github_api_url, data=body, auth=(config.github_user, config.github_auth))
     if req.status_code == 201 or req.status_code == 200:
         log_message("[{}] Sucessefully commented icon diff on: {}".format(repo_name, req.json()['html_url']))
@@ -335,10 +337,15 @@ def start_server():
 
 
 if __name__ == '__main__':
-    if "debug" in sys.argv:
-        # DEBUG = True
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--mode", choices=['server', 'bulk', 'debug'], default='server')
+    parser.add_argument("-d", "--debug", action="store_true")
+    args = parser.parse_args()
+    if args.debug:
+        DEBUG = True
+    if args.mode == "debug":
         get_debug_input()
-    elif "bulk" in sys.argv:
+    elif args.mode == "bulk":
         bulk_prs()
     else:
         start_server()
